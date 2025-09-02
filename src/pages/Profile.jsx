@@ -91,7 +91,7 @@ export default function Profile() {
       if (file) form.append("avatar", file);
       if (avatarUrl && !file) form.append("avatarUrl", avatarUrl);
       form.append("bio", bio || "");
-      const { data } = await api.patch("/users/me", form, {
+      const { data } = await api.patch("/api/users/me", form, { headers: authHeaders() }), form, {
         headers: { ...authHeaders() },
       });
       // reflect changes
