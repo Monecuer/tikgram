@@ -14,7 +14,7 @@ export default function NotificationsBell({ onOpen }) {
       return;
     }
     try {
-      const { data } = await api.get("/api/notifications", {
+      const { data } = await api.get("/api/notifications", { headers: authHeaders() });{
         headers: authHeaders(),
       });
       // backend may return an array or { unread }
