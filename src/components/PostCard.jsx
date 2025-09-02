@@ -1,163 +1,116 @@
-import { useState } from "react";
-import NeonCard from "./animated/NeonCard";
-import LikeButton from "./animated/LikeButton";
-import ReactionBar from "./animated/ReactionBar";
- import CommentsSheet from "./animated/CommentsSheet.jsx";
-import ProVideo from "./video/ProVideo";
-import { api, authHeaders } from "../lib/api";
-import { MessageSquare, Eye } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Heart, MessageSquare, Eye } from "lucide-react";
+import { motion } from "framer-motion";
+import ProVideo from "./video/ProVideo.jsx";
+import CommentsSheet from "./animated/CommentsSheet.jsx";
+import { api, authHeaders, absUrl } from "../lib/api";
 
 function likeCount(likes) {
-  return Array.isArray(likes) ? likes.length : (typeof likes === "number" ? likes : 0);
-}
-function tallyReactionsSummary(mapOrArr) {
-  if (!mapOrArr) return {};
-  if (Array.isArray(mapOrArr)) {
-    return mapOrArr.reduce((m, r) => ((m[r.type] = (m[r.type] || 0) + 1), m), {});
-  }
-  return mapOrArr; // assume object map { "❤️": 3, ... }
+  return Array.isArray(likes) ? likes.length : Number(likes || 0);
 }
 
 export default function PostCard({ post, onChange }) {
   const [openComments, setOpenComments] = useState(false);
   const [local, setLocal] = useState(post);
 
-  const mediaUrl = local.mediaUrl?.startsWith("http")
-    ? local.mediaUrl
-    : (local.mediaUrl ? `${API_BASE}/${local.mediaUrl}` : "");
+  useEffect(() => setLocal(post), [post?._id]); // update when parent changes
 
-  const isVideo =
-    local.mediaType === "video" ||
-    mediaUrl?.toLowerCase().endsWith(".mp4") ||
-    mediaUrl?.toLowerCase().endsWith(".m3u8");
+  const mediaUrl = useMemo(() => absUrl(local.mediaUrl), [local.mediaUrl]);
+  const isVideo = useMemo(() => {
+    const u = (mediaUrl || "").toLowerCase();
+    return local.mediaType === "video" || u.endsWith(".mp4") || u.endsWith(".m3u8") || u.endsWith(".mov");
+  }, [local.mediaType, mediaUrl]);
 
-  const like = async () => {
+  async function toggleLike() {
     try {
-      const { data } = await api.post(`/posts/${local._id}/like`, {}, { headers: authHeaders() });
-      const liked = !local.liked;
-      const nextLikes =
-        typeof data?.likes === "number" ? data.likes : likeCount(local.likes) + (liked ? 1 : -1);
-      const next = { ...local, liked, likes: nextLikes };
+      const { data } = await api.post(`/api/posts/${local._id}/like`, null, { headers: authHeaders() });
+      const next = { ...local, likes: Array(data.likes).fill(1) }; // we only care about count in UI
       setLocal(next);
       onChange?.(next);
     } catch (e) {
-      console.error(e);
+      console.warn(e?.response?.data || e.message);
     }
-  };
+  }
 
-  const react = async (emoji) => {
+  async function pingView() {
+    // fire & forget: no token needed (authOptional on backend)
     try {
-      const { data } = await api.post(
-        `/posts/${local._id}/react`,
-        { type: emoji },
-        { headers: authHeaders() }
-      );
-      const next = {
-        ...local,
-        reactions: data?.reactions || [],
-        reactionsSummary: data?.reactionsSummary || tallyReactionsSummary(data?.reactions),
-      };
-      setLocal(next);
-      onChange?.(next);
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const onViewUpdate = (counts) => {
-    // counts = { viewsCount, commentsCount, reactionsSummary, likes }
-    const next = {
-      ...local,
-      viewsCount: counts?.viewsCount ?? local.viewsCount ?? 0,
-      commentsCount: counts?.commentsCount ?? local.commentsCount ?? local.comments?.length ?? 0,
-      reactionsSummary:
-        counts?.reactionsSummary ?? local.reactionsSummary ?? tallyReactionsSummary(local.reactions),
-      likes: typeof counts?.likes === "number" ? counts.likes : local.likes,
-    };
-    setLocal(next);
-    onChange?.(next);
-  };
-
-  const counts = tallyReactionsSummary(local.reactionsSummary || local.reactions);
-  const commentsCount =
-    typeof local.commentsCount === "number"
-      ? local.commentsCount
-      : Array.isArray(local.comments)
-      ? local.comments.length
-      : 0;
+      await api.post(`/api/posts/${local._id}/view`);
+    } catch (_e) {}
+  }
 
   return (
-    <>
-      <NeonCard className="mb-6 p-4">
-        {/* header */}
-        <div className="flex items-center justify-between">
-          <p className="font-semibold">{local.userId?.username || "Anonymous"}</p>
-          <span className="text-xs text-white/60">
-            {local.createdAt ? new Date(local.createdAt).toLocaleString() : ""}
-          </span>
+    <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-3 mb-5 shadow-sm">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <div className="h-8 w-8 rounded-full bg-white/10" />
+          <div className="text-sm">
+            <div className="font-semibold">{local.userId?.username ?? "Anonymous"}</div>
+            <div className="text-xs text-white/60">{new Date(local.createdAt).toLocaleString()}</div>
+          </div>
         </div>
+      </div>
 
-        {/* media */}
-        {mediaUrl && (
-          isVideo ? (
-            <ProVideo
-              src={mediaUrl}
-              poster={local.thumbUrl}
-              postId={local._id}
-              onDoubleLike={like}
-              onViewUpdate={onViewUpdate}
-              className="mt-3 shadow-lift"
-            />
-          ) : (
-            <img
-              src={mediaUrl}
-              alt=""
-              className="w-full h-auto rounded mt-3 shadow-lift object-cover"
-            />
-          )
-        )}
+      {mediaUrl && (
+        isVideo ? (
+          <ProVideo
+            src={mediaUrl}
+            poster={absUrl(local.thumbUrl)}
+            className="rounded-xl overflow-hidden"
+            onBecameVisible={pingView}
+            onDoubleLike={toggleLike}
+          />
+        ) : (
+          <img
+            src={mediaUrl}
+            alt=""
+            className="w-full h-auto rounded-xl"
+            loading="lazy"
+            onLoad={pingView}
+          />
+        )
+      )}
 
-        {/* caption */}
-        {local.caption && <p className="mt-3">{local.caption}</p>}
+      {local.caption && (
+        <p className="text-sm mt-3 whitespace-pre-wrap">{local.caption}</p>
+      )}
 
-        {/* actions */}
-        <div className="mt-3 flex items-center justify-between">
-          <LikeButton liked={!!local.liked} count={likeCount(local.likes)} onClick={like} />
-          <ReactionBar onReact={react} summary={counts} />
-          <button
-            onClick={() => setOpenComments(true)}
-            className="px-3 py-2 rounded-xl bg-white/5 text-white/80 flex items-center gap-2"
-            title="Comments"
+      <div className="flex items-center justify-between mt-3">
+        <div className="flex items-center gap-3">
+          <motion.button
+            whileTap={{ scale: 0.92 }}
+            className="px-3 py-2 rounded-xl bg-white/10 border border-white/10 flex items-center gap-1"
+            onClick={toggleLike}
           >
-            <MessageSquare size={18} />
-            <span className="text-sm">{commentsCount}</span>
-          </button>
+            <Heart size={16} />
+            <span className="text-xs">{likeCount(local.likes)}</span>
+          </motion.button>
+
+          <motion.button
+            whileTap={{ scale: 0.92 }}
+            className="px-3 py-2 rounded-xl bg-white/10 border border-white/10 flex items-center gap-1"
+            onClick={() => setOpenComments(true)}
+          >
+            <MessageSquare size={16} />
+            <span className="text-xs">{local.commentsCount ?? local.comments?.length ?? 0}</span>
+          </motion.button>
         </div>
 
-        {/* footer stats */}
-        <div className="mt-2 text-xs text-white/60 flex items-center gap-4">
-          <span className="flex items-center gap-1">
-            <Eye size={14} /> {local.viewsCount ?? 0}
-          </span>
-          <span>
-            {Object.entries(counts)
-              .filter(([_, v]) => v > 0)
-              .map(([k, v]) => `${k} ${v}`)
-              .join("  •  ")}
-          </span>
+        <div className="text-xs text-white/60 flex items-center gap-1">
+          <Eye size={14} /> {local.viewsCount ?? 0}
         </div>
-      </NeonCard>
+      </div>
 
       <CommentsSheet
         postId={local._id}
         open={openComments}
         onClose={() => setOpenComments(false)}
-        onAfterPost={(newList) => {
-          const next = { ...local, comments: newList, commentsCount: newList.length };
+        onAfterPost={(count) => {
+          const next = { ...local, commentsCount: count };
           setLocal(next);
           onChange?.(next);
         }}
       />
-    </>
+    </div>
   );
 }
