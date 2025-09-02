@@ -1,0 +1,8 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+@import "tailwindcss";
+:root{ color-scheme: dark; }
+html,body,#root{ height:100%; background:#0b0f14; color:white; }
+:root{ color-scheme: dark; }
+html,body,#root{ height:100%; background:#0b0f14; color:#fff; }
