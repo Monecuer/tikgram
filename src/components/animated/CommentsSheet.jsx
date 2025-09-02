@@ -24,7 +24,7 @@ export default function CommentsSheet({ postId, open, onClose, onAfterPost }) {
     e.preventDefault();
     if (!text.trim()) return;
     try {
-      const { data } = await api.post(`/api/posts/${postId}/comment`, { text }, { headers: authHeaders() });
+      const { data } = await api.post(`/api/posts/${postId}/comment`, { text }, { headers: authHeaders() })
       setItems(data.comments || []);
       onAfterPost?.(data.commentsCount ?? (data.comments?.length ?? 0));
       setText("");
