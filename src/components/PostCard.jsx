@@ -23,7 +23,7 @@ export default function PostCard({ post, onChange }) {
 
   async function toggleLike() {
     try {
-      const { data } = await api.post(`/api/posts/${local._id}/like`, null, { headers: authHeaders() });
+      api.post(`/api/posts/${post._id}/react`, { type }, { headers: authHeaders() })
       const next = { ...local, likes: Array(data.likes).fill(1) }; // we only care about count in UI
       setLocal(next);
       onChange?.(next);
