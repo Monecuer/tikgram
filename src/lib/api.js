@@ -27,5 +27,12 @@ export const authHeaders = () => {
 // quick check
 export const isAuthed = () => !!localStorage.getItem("token");
 
+// ✅ absUrl: turn relative paths into full URLs
+export const absUrl = (path) => {
+  if (!path) return "";
+  if (path.startsWith("http")) return path;
+  return `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
+};
+
 // boot: hydrate axios from storage
 setAuthToken(localStorage.getItem("token") || "");
