@@ -46,7 +46,7 @@ export default function Profile() {
     else                    profRes = await api.get(`/users/by-username/${username}`, { headers });
 
     const userId = profRes.data.user._id;
-    const postsRes = await api.get(`/users/${userId}/posts`, { headers });
+    const postsRes = await api.get("/api/users/me", { headers: authHeaders() })
 
     setProfile(profRes.data);
     setPosts(postsRes.data);
