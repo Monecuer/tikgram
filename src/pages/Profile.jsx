@@ -1,106 +1,74 @@
-import { useEffect, useMemo, useState } from "react";
-import { useParams, useLocation, Link } from "react-router-dom";
-import AnimatedTabs from "../components/animated/AnimatedTabs";
-import NeonCard from "../components/animated/NeonCard";
-import Skeleton from "../components/animated/Skeleton";
-import PostCard from "../components/PostCard.jsx";
-import { api, authHeaders, API_BASE } from "../lib/api";
-import { Pencil, X, Save } from "lucide-react";
-
-function Stat({ label, value }) {
-  return (
-    <div className="text-center">
-      <div className="text-lg font-semibold">{value}</div>
-      <div className="text-xs text-white/60">{label}</div>
-    </div>
-  );
-}
+// src/pages/Profile.jsx
+import { useEffect, useState } from "react";
+import { api, authHeaders } from "../lib/api";
+import { useNavigate } from "react-router-dom";
 
 export default function Profile() {
-  const { id, username } = useParams(); // supports /u/:id and /@:username
-  const path = useLocation().pathname;
-  const isMeRoute = path === "/profile";
+  const nav = useNavigate();
 
+  const [me, setMe] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [profile, setProfile] = useState(null);
-  const [posts, setPosts] = useState([]);
+  const [saving, setSaving] = useState(false);
 
-  // edit mode state
-  const [edit, setEdit] = useState(false);
+  // editable fields
   const [bio, setBio] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
   const [file, setFile] = useState(null);
-  const [saving, setSaving] = useState(false);
-
-  const mode = useMemo(() => {
-    if (isMeRoute) return "me";
-    if (username) return "username";
-    return "id";
-  }, [isMeRoute, username]);
-
-  const load = async () => {
-    const headers = authHeaders();
-    let profRes;
-    if (mode === "me")      profRes = await api.get("/users/me", { headers });
-    else if (mode === "id") profRes = await api.get(`/users/${id}`, { headers });
-    else                    profRes = await api.get(`/users/by-username/${username}`, { headers });
-
-    const userId = profRes.data.user._id;
-    const postsRes = await api.get("/api/users/me", { headers: authHeaders() })
-
-    setProfile(profRes.data);
-    setPosts(postsRes.data);
-
-    // seed edit fields if it’s me
-    if (profRes.data.isMe) {
-      setBio(profRes.data.user.bio || "");
-      setAvatarUrl(profRes.data.user.avatarUrl || "");
-    }
-    setLoading(false);
-  };
+  const [preview, setPreview] = useState("");
 
   useEffect(() => {
-    setLoading(true);
-    setEdit(false);
-    setFile(null);
+    const load = async () => {
+      try {
+        const { data } = await api.get("/api/users/me", { headers: authHeaders() });
+        setMe(data);
+        setBio(data.bio || "");
+        setAvatarUrl(data.avatarUrl || "");
+      } catch (e) {
+        // if not authed, bounce to login
+        nav("/login");
+      } finally {
+        setLoading(false);
+      }
+    };
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, id, username]);
+  }, [nav]);
 
-  const toggleFollow = async () => {
-    const headers = authHeaders();
-    const targetId = profile.user._id;
-    const { data } = await api.post(`/users/${targetId}/follow`, {}, { headers });
-    setProfile((p) => ({
-      ...p,
-      isFollowing: data.following,
-      stats: { ...p.stats, followers: data.followerCount },
-    }));
+  const onPickFile = (e) => {
+    const f = e.target.files?.[0];
+    if (f) {
+      setFile(f);
+      const url = URL.createObjectURL(f);
+      setPreview(url);
+    }
   };
 
-  const preview = file
-    ? URL.createObjectURL(file)
-    : (avatarUrl
-        ? (avatarUrl.startsWith("http") ? avatarUrl : `${API_BASE}/${avatarUrl}`)
-        : `https://api.dicebear.com/7.x/initials/svg?seed=${profile?.user?.username || "user"}`);
-
-  const saveProfile = async () => {
+  const onSave = async (e) => {
+    e.preventDefault();
+    if (saving) return;
     setSaving(true);
     try {
-      const form = new FormData();
-      if (file) form.append("avatar", file);
-      if (avatarUrl && !file) form.append("avatarUrl", avatarUrl);
-      form.append("bio", bio || "");
-      const { data } = await api.patch("/api/users/me", form, { headers: authHeaders() }), form, {
-        headers: { ...authHeaders() },
+      const fd = new FormData();
+      // send the *file* if user picked one
+      if (file) fd.append("avatar", file);
+      // otherwise keep current avatarUrl (optional, backend can ignore if file present)
+      if (avatarUrl && !file) fd.append("avatarUrl", avatarUrl);
+      fd.append("bio", bio || "");
+
+      const res = await api.patch("/api/users/me", fd, {
+        headers: {
+          ...authHeaders(),
+          "Content-Type": "multipart/form-data",
+        },
       });
-      // reflect changes
-      setProfile((p) => ({ ...p, user: { ...p.user, ...data.user } }));
-      setEdit(false);
+
+      // reflect returned user
+      setMe(res.data);
+      setAvatarUrl(res.data.avatarUrl || avatarUrl);
       setFile(null);
-    } catch (e) {
-      console.error(e);
-      alert("Failed to save changes");
+      setPreview("");
+    } catch (err) {
+      console.error("Save failed:", err?.response?.data || err.message);
+      alert(err?.response?.data?.msg || "Failed to save profile");
     } finally {
       setSaving(false);
     }
@@ -108,148 +76,77 @@ export default function Profile() {
 
   if (loading) {
     return (
-      <div className="min-h-screen p-4 max-w-lg mx-auto">
-        <Skeleton className="h-24 w-full mb-4" />
-        <Skeleton className="h-40 w-full" />
+      <div className="mx-auto max-w-lg p-4">
+        <div className="h-24 w-24 animate-pulse rounded-full bg-white/10 mb-4" />
+        <div className="h-4 w-40 animate-pulse rounded bg-white/10" />
       </div>
     );
   }
 
-  const u = profile.user;
-  const stats = profile.stats;
-
   return (
-    <div className="min-h-screen p-4 max-w-lg mx-auto pb-24">
-      {/* Header card */}
-      <NeonCard className="p-4">
+    <div className="mx-auto max-w-lg p-4">
+      <h1 className="mb-4 text-2xl font-bold">Your Profile</h1>
+
+      <form onSubmit={onSave} className="space-y-4 rounded-2xl border border-glass bg-white/5 p-4">
         <div className="flex items-center gap-4">
-          <img
-            src={preview}
-            className="w-20 h-20 rounded-full ring-2 ring-primary object-cover"
-            alt=""
-          />
-          <div className="flex-1">
-            <div className="text-xl font-semibold">@{u.username}</div>
-            {!edit ? (
-              <div className="text-sm text-white/70">{u.bio || "No bio yet"}</div>
-            ) : (
-              <div className="space-y-2 mt-2">
-                <div>
-                  <label className="text-xs text-white/60">Avatar file</label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => {
-                      setFile(e.target.files?.[0] || null);
-                    }}
-                    className="mt-1 block w-full text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-white/60">Avatar URL (optional)</label>
-                  <input
-                    className="mt-1 w-full bg-white/5 border border-glass rounded-xl px-3 py-2"
-                    placeholder="https://…"
-                    value={avatarUrl}
-                    onChange={(e) => setAvatarUrl(e.target.value)}
-                    disabled={!!file}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-white/60">Bio</label>
-                  <textarea
-                    rows={3}
-                    maxLength={220}
-                    className="mt-1 w-full bg-white/5 border border-glass rounded-xl px-3 py-2"
-                    value={bio}
-                    onChange={(e) => setBio(e.target.value)}
-                    placeholder="Say something nice…"
-                  />
-                  <div className="text-[11px] text-white/50 mt-1">{bio.length}/220</div>
-                </div>
-              </div>
+          <div className="relative">
+            {/* preview order: picked file -> preview -> avatarUrl from backend */}
+            <img
+              src={preview || (me?.avatarUrl ? me.avatarUrl : "/avatar-placeholder.png")}
+              alt="avatar"
+              className="h-24 w-24 rounded-full object-cover border border-white/10"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm mb-1">Change avatar</label>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={onPickFile}
+              className="block text-sm"
+            />
+            {!file && (
+              <input
+                type="url"
+                placeholder="Or paste image URL"
+                value={avatarUrl}
+                onChange={(e) => setAvatarUrl(e.target.value)}
+                className="mt-2 w-full rounded-lg bg-black/30 p-2 text-sm outline-none border border-white/10"
+              />
             )}
           </div>
-
-          {/* Right side button */}
-          {profile.isMe ? (
-            !edit ? (
-              <button
-                onClick={() => setEdit(true)}
-                className="p-2 rounded-xl bg-white/10 border border-glass"
-                title="Edit Profile"
-              >
-                <Pencil size={18} />
-              </button>
-            ) : (
-              <button
-                onClick={() => { setEdit(false); setFile(null); setBio(u.bio || ""); setAvatarUrl(u.avatarUrl || ""); }}
-                className="p-2 rounded-xl bg-white/10 border border-glass"
-                title="Cancel"
-              >
-                <X size={18} />
-              </button>
-            )
-          ) : (
-            <button
-              onClick={toggleFollow}
-              className={`px-3 py-2 rounded-xl ${profile.isFollowing ? "bg-white/10 text-white" : "bg-primary text-black"}`}
-            >
-              {profile.isFollowing ? "Following" : "Follow"}
-            </button>
-          )}
         </div>
 
-        <div className="mt-4 grid grid-cols-4 gap-2">
-          <Stat label="Posts" value={stats.posts} />
-          <Stat label="Followers" value={stats.followers} />
-          <Stat label="Following" value={stats.following} />
-          <Stat label="Likes" value={stats.totalLikes} />
+        <div>
+          <label className="block text-sm mb-1">Bio</label>
+          <textarea
+            rows={4}
+            value={bio}
+            onChange={(e) => setBio(e.target.value)}
+            className="w-full rounded-lg bg-black/30 p-3 outline-none border border-white/10"
+            maxLength={2200}
+          />
+          <div className="mt-1 text-right text-xs text-white/60">{bio.length}/2200</div>
         </div>
 
-        {profile.isMe && !edit && (
-          <div className="mt-3 text-xs text-white/60">
-            Prefer a full page? <Link to="/settings/profile" className="underline text-primary">Edit in Settings</Link>
+        <div className="flex items-center justify-between">
+          <div className="text-sm text-white/60">
+            @{me?.username}
           </div>
-        )}
-      </NeonCard>
-
-      {/* Tabs */}
-      <div className="mt-4">
-        <AnimatedTabs tabs={[{label:"Posts"},{label:"Remixes"},{label:"Challenges"}]} initial={0}/>
-      </div>
-
-      {/* Posts list */}
-      <div className="mt-4 space-y-4">
-        {posts.length === 0 ? (
-          <NeonCard className="p-10 text-center text-white/60">No posts yet</NeonCard>
-        ) : (
-          posts.map((p) => <PostCard key={p._id} post={p} />)
-        )}
-      </div>
-
-      {/* Sticky Save bar (only in edit mode) */}
-      {profile.isMe && edit && (
-        <div className="fixed left-0 right-0 bottom-0 z-40">
-          <div className="mx-auto max-w-lg p-3">
-            <div className="rounded-2xl bg-card border border-glass p-3 shadow-lift flex items-center gap-2">
-              <button
-                onClick={() => { setEdit(false); setFile(null); setBio(u.bio || ""); setAvatarUrl(u.avatarUrl || ""); }}
-                className="flex-1 px-4 py-2 rounded-xl bg-white/10"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={saveProfile}
-                disabled={saving}
-                className="flex-1 px-4 py-2 rounded-xl bg-primary text-black flex items-center justify-center gap-2"
-              >
-                <Save size={18} /> {saving ? "Saving…" : "Save Changes"}
-              </button>
-            </div>
-          </div>
+          <button
+            type="submit"
+            disabled={saving}
+            className={`rounded-xl px-4 py-2 font-semibold transition ${
+              saving
+                ? "bg-white/20 cursor-not-allowed"
+                : "bg-pink-600 hover:bg-pink-500"
+            }`}
+          >
+            {saving ? "Saving..." : "Save changes"}
+          </button>
         </div>
-      )}
+      </form>
     </div>
   );
 }
