@@ -1,25 +1,24 @@
+// src/lib/api.js
 import axios from "axios";
 
-export const API_BASE =
-  import.meta.env.VITE_API_BASE || "https://tikgram-backend.onrender.com";
+// Read once. Netlify: add VITE_API_BASE in Site → Settings → Environment.
+const RAW = import.meta.env.VITE_API_BASE || "http://localhost:5001";
+export const apiBase = RAW.replace(/\/+$/, ""); // strip trailing slash
 
-export const api = axios.create({ baseURL: `${API_BASE}/api` });
+export const api = axios.create({
+  baseURL: apiBase,
+  withCredentials: false,
+  headers: { "Content-Type": "application/json" },
+});
 
 export function authHeaders() {
-  const t = localStorage.getItem("token");
-  return t ? { Authorization: `Bearer ${t}` } : {};
+  const token = localStorage.getItem("token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-export function setAuthToken(token) {
-  if (token) {
-    localStorage.setItem("token", token);
-    api.defaults.headers.common.Authorization = `Bearer ${token}`;
-  } else {
-    localStorage.removeItem("token");
-    delete api.defaults.headers.common.Authorization;
-  }
-}
-
-export function isAuthed() {
-  return !!localStorage.getItem("token");
+// Build absolute URLs for media paths coming from backend (e.g. "uploads/xyz.mp4")
+export function absUrl(u) {
+  if (!u) return "";
+  if (/^https?:\/\//i.test(u)) return u;
+  return `${apiBase}/${u.replace(/^\/+/, "")}`;
 }
