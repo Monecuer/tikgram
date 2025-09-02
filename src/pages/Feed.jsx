@@ -22,7 +22,7 @@ export default function Feed() {
 
   const load = async () => {
     try {
-      const { data } = await api.get("/posts"); // public feed
+const { data } = await api.get("/api/posts", { headers: authHeaders() });
       setPosts(Array.isArray(data) ? data : []);
     } catch { setPosts([]); }
   };
